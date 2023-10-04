@@ -5,12 +5,15 @@ import click
 
 from src.explib.config_parser import read_config
 
-Pathable = T.Union[str, os.PathLike]  # In principle one can cast it to os.path.Path
+# In principle one can cast it to os.path.Path
+Pathable = T.Union[str, os.PathLike]
 
 
 @click.command()
 @click.option("--report_dir", default="./reports", help="Report file")
-@click.option("--config", default="./config.yaml", help="Prefix for config items")
+@click.option(
+    "--config", default="./config.yaml", help="Prefix for config items"
+)
 @click.option("--storage_path", default=None, help="Prefix for config items")
 def run(report_dir: Pathable, config: Pathable, storage_path: Pathable):
     """Loads an experiment from config file conducts the experiment it.

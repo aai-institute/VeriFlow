@@ -5,7 +5,7 @@ experiments:
     - &exp_nice
       __object__: src.explib.hyperopt.HyperoptExperiment
       name: mnist_nice
-      scheduler: &scheduler 
+      scheduler: &scheduler
         __object__: ray.tune.schedulers.ASHAScheduler
         max_t: 10000
         grace_period: 10000
@@ -22,53 +22,52 @@ experiments:
           digit: 0
         epochs: &epochs 20
         patience: &patience 5
-        batch_size: &batch_size 
+        batch_size: &batch_size
           __eval__: tune.choice([32])
-        optim_cfg: &optim 
+        optim_cfg: &optim
           optimizer:
-            __class__: torch.optim.Adam 
+            __class__: torch.optim.Adam
           params:
-            lr: 
+            lr:
               __eval__: tune.loguniform(1e-2, 5e-4)
             weight_decay: 0.0
-        
-        model_cfg: 
+
+        model_cfg:
           type:
             __class__: &model src.veriflow.flows.NiceFlow
           params:
-            coupling_layers: &coupling_layers 
+            coupling_layers: &coupling_layers
               __eval__: tune.choice([3])
-            coupling_nn_layers: &coupling_nn_layers 
+            coupling_nn_layers: &coupling_nn_layers
               __eval__: tune.choice([[100]*2])
-            nonlinearity: &nonlinearity 
+            nonlinearity: &nonlinearity
               __eval__: tune.choice([torch.nn.ReLU()])
             split_dim: &split_dim 50
-            base_distribution: 
+            base_distribution:
               __object__: pyro.distributions.Laplace
-              loc: 
+              loc:
                 __eval__: torch.zeros(100)
-              scale: 
+              scale:
                 __eval__: torch.ones(100)
             permutation: &permutation half
     - &exp_lu
       __overwrites__: *exp_nice
       name: mnist_lu
-      model_cfg: 
+      model_cfg:
           type:
             __class__: src.veriflow.flows.LUFlow
           params:
-            n_layers: 
+            n_layers:
               __eval__: tune.choice([4])
-            base_distribution: 
+            base_distribution:
               __object__: pyro.distributions.Normal
-              loc: 
+              loc:
                 __eval__: torch.zeros(100)
-              scale: 
+              scale:
                 __eval__: torch.ones(100)
     - &exp_lunice
       __overwrites__: *exp_nice
-      model_cfg: 
+      model_cfg:
         name: mnist_lunice
         params:
           permutation: LU
-

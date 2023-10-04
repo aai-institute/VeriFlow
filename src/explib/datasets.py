@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as transforms
-from sklearn.datasets import make_blobs, make_checkerboard, make_circles, make_moons
+from sklearn.datasets import (make_blobs, make_checkerboard, make_circles,
+                              make_moons)
 from torch import Tensor
 from torchvision.datasets import MNIST, FashionMNIST
 
@@ -34,7 +35,9 @@ class DequantizedDataset(torch.utils.data.Dataset):
         self.transform = transforms.Compose(
             [
                 transforms.Lambda(lambda x: x / self.num_levels),
-                transforms.Lambda(lambda x: x + torch.rand_like(x) / self.num_levels),
+                transforms.Lambda(
+                    lambda x: x + torch.rand_like(x) / self.num_levels
+                ),
             ]
         )
 
@@ -253,8 +256,11 @@ class MnistDequantized(DequantizedDataset):
         x = self.transform(x)
         return x, 0
 
+
 class DataSplitFromCSV(DataSplit):
-    def __init__(self, train: os.PathLike, test: os.PathLike, val: os.PathLike):
+    def __init__(
+        self, train: os.PathLike, test: os.PathLike, val: os.PathLike
+    ):
         self.train = train
         self.test = test
         self.val = val
@@ -279,7 +285,9 @@ class FashionMnistSplit(DataSplit):
         if dataloc is None:
             dataloc = os.path.join(os.getcwd(), "data")
         self.dataloc = dataloc
-        self.train = FashionMnistDequantized(self.dataloc, train=True, label=label)
+        self.train = FashionMnistDequantized(
+            self.dataloc, train=True, label=label
+        )
         shuffle = torch.randperm(len(self.train))
         self.val = torch.utils.data.Subset(
             self.train, shuffle[: int(len(self.train) * val_split)]
@@ -287,7 +295,9 @@ class FashionMnistSplit(DataSplit):
         self.train = torch.utils.data.Subset(
             self.train, shuffle[int(len(self.train) * val_split) :]
         )
-        self.test = FashionMnistDequantized(self.dataloc, train=False, label=label)
+        self.test = FashionMnistDequantized(
+            self.dataloc, train=False, label=label
+        )
 
     def get_train(self) -> torch.utils.data.Dataset:
         return self.train

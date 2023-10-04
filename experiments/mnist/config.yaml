@@ -5,7 +5,7 @@ experiments:
     - &exp_nice_lu_laplace
       __object__: src.explib.hyperopt.HyperoptExperiment
       name: mnist_nice_lu_laplace
-      scheduler: &scheduler 
+      scheduler: &scheduler
         __object__: ray.tune.schedulers.ASHAScheduler
         max_t: 1000000
         grace_period: 1000000
@@ -22,62 +22,61 @@ experiments:
           digit: 0
         epochs: &epochs 200000
         patience: &patience 50
-        batch_size: &batch_size 
+        batch_size: &batch_size
           __eval__: tune.choice([32])
-        optim_cfg: &optim 
+        optim_cfg: &optim
           optimizer:
-            __class__: torch.optim.Adam 
+            __class__: torch.optim.Adam
           params:
-            lr: 
+            lr:
               __eval__: tune.loguniform(1e-4, 1e-2)
             weight_decay: 0.0
-        
-        model_cfg: 
+
+        model_cfg:
           type:
             __class__: &model src.veriflow.flows.NiceFlow
           params:
-            coupling_layers: &coupling_layers 
+            coupling_layers: &coupling_layers
               __eval__: tune.choice([2, 3, 4, 5, 6, 7, 8, 9, 10])
-            coupling_nn_layers: &coupling_nn_layers 
+            coupling_nn_layers: &coupling_nn_layers
               __eval__: tune.choice([[w]*l for l in [1, 2, 3, 4] for w in [10, 20, 50, 100, 200]])
-            nonlinearity: &nonlinearity 
+            nonlinearity: &nonlinearity
               __eval__: tune.choice([torch.nn.ReLU()])
-            split_dim: 
+            split_dim:
               __eval__: tune.choice([i for i in range(1, 51)])
-            base_distribution: 
+            base_distribution:
               __object__: pyro.distributions.Laplace
-              loc: 
+              loc:
                 __eval__: torch.zeros(100)
-              scale: 
+              scale:
                 __eval__: torch.ones(100)
             permutation: &permutation LU
     - &exp_nice_lu_normal
       __overwrites__: *exp_nice_lu_laplace
       name: mnist_nice_lu_normal
-      model_cfg: 
+      model_cfg:
           params:
-            base_distribution: 
+            base_distribution:
               __object__: pyro.distributions.Normal
-              loc: 
+              loc:
                 __eval__: torch.zeros(100)
-              scale: 
+              scale:
                 __eval__: torch.ones(100)
     - &exp_nice_rand_laplace
       __overwrites__: *exp_nice_lu_laplace
       name: mnist_nice_rand_laplace
-      model_cfg: 
+      model_cfg:
         params:
           permutation: random
     - &exp_nice_rand_normal
       __overwrites__: *exp_nice_lu_laplace
       name: mnist_nice_rand_normal
-      model_cfg: 
+      model_cfg:
         params:
           permutation: random
-          base_distribution: 
+          base_distribution:
               __object__: pyro.distributions.Normal
-              loc: 
+              loc:
                 __eval__: torch.zeros(100)
-              scale: 
+              scale:
                 __eval__: torch.ones(100)
-

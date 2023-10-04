@@ -1,28 +1,21 @@
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
+
 import numpy as np
-
-from torch.utils.data import Dataset
-
 import pyro
-from pyro import distributions as dist
-from pyro.distributions.transforms import SoftplusTransform
-from pyro.nn import DenseNN
-from pyro.distributions.transforms import AffineCoupling, LowerCholeskyAffine
-from pyro.infer import SVI
-from typing import List, Dict, Literal, Any, Iterable, Optional, Union, Tuple
 import torch
-from torch.utils.data import DataLoader
-
+from pyro import distributions as dist
+from pyro.distributions.transforms import (AffineCoupling, LowerCholeskyAffine,
+                                           SoftplusTransform)
+from pyro.infer import SVI
+from pyro.nn import DenseNN
 from sklearn.datasets import load_digits
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from src.veriflow.transforms import (
-    ScaleTransform,
-    MaskedCoupling,
-    Permute,
-    LUTransform,
-    LeakyReLUTransform,
-    BaseTransform,
-)
+
 from src.veriflow.networks import AdditiveAffineNN, ConvNet2D
+from src.veriflow.transforms import (BaseTransform, LeakyReLUTransform,
+                                     LUTransform, MaskedCoupling, Permute,
+                                     ScaleTransform)
 
 
 class Flow(torch.nn.Module):
@@ -34,7 +27,8 @@ class Flow(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         """Dummy implementation of forward method for onnx export. The self.export attribute
-        determines whether the log_prob or the sample function is exported to onnx"""
+        determines whether the log_prob or the sample function is exported to onnx
+        """
         if self.export == "log_prob":
             return self.log_prob(x)
         elif self.export == "sample":
@@ -51,7 +45,9 @@ class Flow(torch.nn.Module):
         )
         self.base_distribution = base_distribution
 
-        self.transform = dist.TransformedDistribution(base_distribution, layers)
+        self.transform = dist.TransformedDistribution(
+            base_distribution, layers
+        )
 
     def fit(
         self,
@@ -63,7 +59,7 @@ class Flow(torch.nn.Module):
         gradient_clip: float = None,
         device: torch.device = None,
         jitter: float = 1e-6,
-        epochs: int = 1
+        epochs: int = 1,
     ) -> float:
         """
         Wrapper function for the fitting procedure. Allows basic configuration of the optimizer and other
@@ -96,7 +92,7 @@ class Flow(torch.nn.Module):
             optim = optim(model.trainable_layers.parameters())
 
         N = len(data_train)
-        
+
         epoch_losses = []
         for _ in range(epochs):
             losses = []
@@ -107,7 +103,9 @@ class Flow(torch.nn.Module):
             for idx in range(0, N, batch_size):
                 idx_end = min(idx + batch_size, N)
                 try:
-                    sample = torch.Tensor(data_train[idx:idx_end][0]).to(device)
+                    sample = torch.Tensor(data_train[idx:idx_end][0]).to(
+                        device
+                    )
                 except:
                     continue
                 optim.zero_grad()
@@ -117,17 +115,21 @@ class Flow(torch.nn.Module):
                 losses.append(float(loss.detach()))
                 loss.backward()
                 if gradient_clip is not None:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), gradient_clip
+                    )
                 optim.step()
                 while not self.is_feasible():
                     self.add_jitter(jitter)
 
                 model.transform.clear_cache()
             epoch_losses.append(np.mean(losses))
-            
+
         return epoch_losses
 
-    def to_onnx(self, path: str, export_mode: export_modes = "log_prob") -> None:
+    def to_onnx(
+        self, path: str, export_mode: export_modes = "log_prob"
+    ) -> None:
         """Saves the model as onnx file
 
         Args:
@@ -139,7 +141,6 @@ class Flow(torch.nn.Module):
         dummy_input = self.base_distribution.sample()
         torch.onnx.export(self, dummy_input, path, verbose=True)
         self.export = mode_cache
-        
 
     def log_prob(self, x: torch.Tensor) -> torch.Tensor:
         """Returns the models log-densities for the given samples
@@ -172,7 +173,11 @@ class Flow(torch.nn.Module):
     def is_feasible(self) -> bool:
         """Checks is the model parameters meet all constraints"""
         return all(
-            [l.is_feasible() for l in self.layers if isinstance(l, BaseTransform)]
+            [
+                l.is_feasible()
+                for l in self.layers
+                if isinstance(l, BaseTransform)
+            ]
         )
 
     def add_jitter(self, jitter: float = 1e-6) -> None:
@@ -227,7 +232,10 @@ class NiceFlow(Flow):
                 AffineCoupling(
                     split_dim,
                     AdditiveAffineNN(
-                        split_dim, coupling_nn_layers, rdim, nonlinearity=nonlinearity
+                        split_dim,
+                        coupling_nn_layers,
+                        rdim,
+                        nonlinearity=nonlinearity,
                     ),
                 )
             )
@@ -248,7 +256,9 @@ class NiceFlow(Flow):
             if i % 2 == 0:  # every 2nd pixel
                 perm = torch.arange(self.input_dim, dtype=torch.long)
                 perm = perm.reshape(-1, 2).moveaxis(0, 1).reshape(-1)
-            elif i % 2 == 1:  # interchange conditioning variables and output variables
+            elif (
+                i % 2 == 1
+            ):  # interchange conditioning variables and output variables
                 perm = torch.arange(self.input_dim, dtype=torch.long)
                 perm = perm.reshape(2, -1).flip(0).reshape(-1)
             else:  # random permutation
@@ -332,7 +342,9 @@ class NiceMaskedConvFlow(Flow):
         Returns:
             Checkerboard mask of height $h$ and width $w$.
         """
-        x, y = torch.arange(h, dtype=torch.int32), torch.arange(w, dtype=torch.int32)
+        x, y = torch.arange(h, dtype=torch.int32), torch.arange(
+            w, dtype=torch.int32
+        )
         xx, yy = torch.meshgrid(x, y, indexing="ij")
         mask = torch.fmod(xx + yy, 2)
         mask = mask.to(torch.float32).view(1, 1, h, w)
@@ -381,7 +393,13 @@ class LUFlow(Flow):
 
     def is_feasible(self):
         """Checks if all LU layers are feasible"""
-        return all([l.is_feasible() for l in self.layers if isinstance(l, LUTransform)])
+        return all(
+            [
+                l.is_feasible()
+                for l in self.layers
+                if isinstance(l, LUTransform)
+            ]
+        )
 
     def add_jitter(self, jitter: float = 1e-6) -> None:
         for layer in self.layers:

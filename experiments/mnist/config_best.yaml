@@ -5,7 +5,7 @@ experiments:
     - &exp_laplace_best
       __object__: src.explib.hyperopt.HyperoptExperiment
       name: mnist_normal_best
-      scheduler: &scheduler 
+      scheduler: &scheduler
         __object__: ray.tune.schedulers.ASHAScheduler
         max_t: 10000
         grace_period: 10000
@@ -23,27 +23,26 @@ experiments:
         epochs: &epochs 10000
         patience: &patience 50
         batch_size: 32
-        optim_cfg: &optim 
+        optim_cfg: &optim
           optimizer:
-            __class__: torch.optim.Adam 
+            __class__: torch.optim.Adam
           params:
             lr: 0.005663140094965476
             weight_decay: 0.0
-        
-        model_cfg: 
+
+        model_cfg:
           type:
             __class__: &model src.veriflow.flows.NiceFlow
           params:
             coupling_layers: 4
             coupling_nn_layers: [50, 50]
-            nonlinearity: &nonlinearity 
+            nonlinearity: &nonlinearity
               __eval__: tune.choice([torch.nn.ReLU()])
             split_dim: &split_dim 50
             base_distribution:
             __object__: pyro.distributions.Normal
-            loc: 
+            loc:
               __eval__: torch.zeros(100)
-            scale: 
+            scale:
               __eval__: torch.ones(100)
             permutation: &permutation half
-    

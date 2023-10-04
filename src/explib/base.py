@@ -42,7 +42,9 @@ class Experiment(object):
 class ExperimentCollection(Experiment):
     """Implements an experiment that consists of several jointly conducted but independent experiments."""
 
-    def __init__(self, experiments: T.Iterable[Experiment], *args, **kwargs) -> None:
+    def __init__(
+        self, experiments: T.Iterable[Experiment], *args, **kwargs
+    ) -> None:
         """
         The function initializes an object with a list of experiments based on a given configuration.
 
@@ -56,15 +58,20 @@ class ExperimentCollection(Experiment):
     @classmethod
     def from_dict(cls, config: T.Dict[str, T.Any]) -> "ExperimentCollection":
         config = deepcopy(config)
-        for i, exp_cfg in enumerate(config["experiment_params"]["experiments"]):
-            config["experiment_params"]["experiments"][i] = Experiment.from_dict(
-                exp_cfg
-            )
+        for i, exp_cfg in enumerate(
+            config["experiment_params"]["experiments"]
+        ):
+            config["experiment_params"]["experiments"][
+                i
+            ] = Experiment.from_dict(exp_cfg)
 
         return Experiment.from_dict(config)
 
-    def conduct(self, report_dir: os.PathLike, storage_path: os.PathLike = None):
+    def conduct(
+        self, report_dir: os.PathLike, storage_path: os.PathLike = None
+    ):
         for i, exp in enumerate(self.experiments):
             exp.conduct(
-                os.path.join(report_dir, f"{i}_{exp.name}"), storage_path=storage_path
+                os.path.join(report_dir, f"{i}_{exp.name}"),
+                storage_path=storage_path,
             )

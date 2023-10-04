@@ -111,14 +111,21 @@ class ConvNet2D(nn.Module):
         c_out = c_out if c_out > 0 else c_in
         layers = []
         layers += [
-            nn.Conv2d(c_in, c_hidden, kernel_size=kernel_size, padding=padding),
+            nn.Conv2d(
+                c_in, c_hidden, kernel_size=kernel_size, padding=padding
+            ),
         ]
         if rescale_hidden != 1:
             layers += [nn.MaxPool2d(rescale_hidden)]
 
         for layer_index in range(num_layers):
             layers += [
-                nn.Conv2d(c_hidden, c_hidden, kernel_size=kernel_size, padding=padding),
+                nn.Conv2d(
+                    c_hidden,
+                    c_hidden,
+                    kernel_size=kernel_size,
+                    padding=padding,
+                ),
                 nonlinearity,
                 LayerNormChannels(c_hidden),
             ]
@@ -145,15 +152,19 @@ class ConvNet2D(nn.Module):
                 nonlinearity,
             ]
 
-        layers += [nn.Conv2d(c_hidden, c_out, kernel_size=kernel_size, padding=padding)]
+        layers += [
+            nn.Conv2d(
+                c_hidden, c_out, kernel_size=kernel_size, padding=padding
+            )
+        ]
         self.nn = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """ Forwards method
-        
+        """Forwards method
+
         Args:
             x (torch.Tensor): Input tensor.
-            
+
         Returns:
             torch.Tensor: network output.
         """

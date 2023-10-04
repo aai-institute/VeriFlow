@@ -1,14 +1,13 @@
 from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, List, Union
 from pickle import load
+from typing import Any, Dict, List, Union
 
+import torch
 import yaml
-
 # Convenience import for direct access in config files via "__eval__"
 from ray import tune
-import torch
 
 
 def unfold_raw_config(d: Dict[str, Any]):
@@ -121,20 +120,20 @@ def read_config(yaml_path: Union[str, Path]) -> dict:
         The keywords supports the core python languages. Additionally, tune and torch are already imported for convenience.
     Example:
         ---
-        entry in yaml: 
-        model: 
+        entry in yaml:
+        model:
             __class__: src.verfiflow.flows.NiceFlow
         entry in result: model: <src.verfiflow.flows.NiceFlow>
         ---
-        entry in yaml: 
-        model: 
+        entry in yaml:
+        model:
             __object__: src.verfiflow.flows.NiceFlow
             p1: 1
             p2: 2
         entry in result: model: <src.verfiflow.flows.NiceFlow(p1=1, p2=2)>
         ---
-        entry in yaml: 
-        lr: 
+        entry in yaml:
+        lr:
             __eval__: tune.loguniform(1e-4, 1e-1)
         entry in result: lr: <tune.loguniform(1e-4, 1e-1)>
 
@@ -189,6 +188,7 @@ def parse_raw_config(d: dict) -> Any:
     else:
         return d
 
+
 def from_checkpoint(params: str, state_dict: str) -> Any:
     """Loads a model from a checkpoint.
 
@@ -200,10 +200,8 @@ def from_checkpoint(params: str, state_dict: str) -> Any:
     """
     spec = load(open(params, "rb"))["model_cfg"]
     model = spec["type"](**spec["params"])
-    
+
     state_dict = torch.load(state_dict)
     model.load_state_dict(state_dict)
-    
+
     return model
-    
-    

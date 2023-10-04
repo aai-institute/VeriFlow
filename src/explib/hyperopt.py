@@ -35,6 +35,7 @@ HyperParams = Literal[
     "base_dist",
 ]
 
+
 class HyperoptExperiment(Experiment):
     """Hyperparameter optimization experiment."""
 
@@ -69,9 +70,11 @@ class HyperoptExperiment(Experiment):
         self.tuner_params = tuner_params
 
     @classmethod
-    def _trial(cls, config: T.Dict[str, T.Any], device: torch.device = "cpu") -> Dict[str, float]:
+    def _trial(
+        cls, config: T.Dict[str, T.Any], device: torch.device = "cpu"
+    ) -> Dict[str, float]:
         """Worker function for hyperparameter optimization.
-        
+
         Args:
             config (T.Dict[str, T.Any]): configuration
             device (torch.device, optional): device. Defaults to "cpu".
@@ -94,7 +97,7 @@ class HyperoptExperiment(Experiment):
 
         flow = config["model_cfg"]["type"](**(config["model_cfg"]["params"]))
         flow.to(device)
-        
+
         best_loss = float("inf")
         strikes = 0
         for _ in range(config["epochs"]):
@@ -109,7 +112,9 @@ class HyperoptExperiment(Experiment):
             val_loss = 0
             for i in range(0, len(data_val), config["batch_size"]):
                 j = min([len(data_test), i + config["batch_size"]])
-                val_loss += float(-flow.log_prob(data_val[i:j][0].to(device)).sum())
+                val_loss += float(
+                    -flow.log_prob(data_val[i:j][0].to(device)).sum()
+                )
             val_loss /= len(data_val)
 
             session.report(
@@ -130,7 +135,9 @@ class HyperoptExperiment(Experiment):
             "val_loss": val_loss,
         }
 
-    def conduct(self, report_dir: os.PathLike, storage_path: os.PathLike = None):
+    def conduct(
+        self, report_dir: os.PathLike, storage_path: os.PathLike = None
+    ):
         """Run hyperparameter optimization experiment.
 
         Args:
@@ -150,7 +157,10 @@ class HyperoptExperiment(Experiment):
         tuner = tune.Tuner(
             tune.with_resources(
                 tune.with_parameters(HyperoptExperiment._trial),
-                resources={"cpu": self.cpus_per_trial, "gpu": self.gpus_per_trial},
+                resources={
+                    "cpu": self.cpus_per_trial,
+                    "gpu": self.gpus_per_trial,
+                },
             ),
             tune_config=tune.TuneConfig(
                 scheduler=self.scheduler,
@@ -174,30 +184,38 @@ class HyperoptExperiment(Experiment):
         report_file = os.path.join(
             report_dir, f"report_{self.name}_" + exptime + ".csv"
         )
-        results = self._build_report(exppath, report_file=report_file, config_prefix="param_")
-        best_result = results.iloc[results["val_loss_best"].argmax()]
+        results = self._build_report(
+            exppath, report_file=report_file, config_prefix="param_"
+        )
+        best_result = results.iloc[results["val_loss_best"].argmax()].copy()
 
         self._test_best_model(best_result, exppath, report_dir)
-    
-    def _test_best_model(self, best_result: pd.Series, expdir: str, report_dir: str, device: torch.device = "cpu") -> pd.Series:
+
+    def _test_best_model(
+        self,
+        best_result: pd.Series,
+        expdir: str,
+        report_dir: str,
+        device: torch.device = "cpu",
+    ) -> pd.Series:
         trial_id = best_result.trial_id
         for d in os.listdir(expdir):
             if trial_id in d:
                 shutil.copyfile(
-                    os.path.join(expdir, d, "checkpoint.pt"), 
-                    os.path.join(report_dir, f"{self.name}_best_model.pt")
+                    os.path.join(expdir, d, "checkpoint.pt"),
+                    os.path.join(report_dir, f"{self.name}_best_model.pt"),
                 )
                 shutil.copyfile(
-                    os.path.join(expdir, d, "params.pkl"), 
-                    os.path.join(report_dir, f"{self.name}_best_config.pkl")
+                    os.path.join(expdir, d, "params.pkl"),
+                    os.path.join(report_dir, f"{self.name}_best_config.pkl"),
                 )
                 break
-        
+
         best_model = from_checkpoint(
             os.path.join(report_dir, f"{self.name}_best_config.pkl"),
-            os.path.join(report_dir, f"{self.name}_best_model.pt")
+            os.path.join(report_dir, f"{self.name}_best_model.pt"),
         )
-        
+
         data_test = self.trial_config["dataset"].get_test()
         test_loss = 0
         for i in range(0, len(data_test), 100):
@@ -206,15 +224,17 @@ class HyperoptExperiment(Experiment):
                 -best_model.log_prob(data_test[i:j][0].to(device)).sum()
             )
         test_loss /= len(data_test)
-        
+
         best_result["test_loss"] = test_loss
         best_result.to_csv(
             os.path.join(report_dir, f"{self.name}_best_result.csv")
         )
-        
+
         return best_result
-        
-    def _build_report(self, expdir: str, report_file: str, config_prefix: str = "") -> pd.DataFrame:
+
+    def _build_report(
+        self, expdir: str, report_file: str, config_prefix: str = ""
+    ) -> pd.DataFrame:
         """Builds a report of the hyperopt experiment.
 
         Args:
@@ -228,7 +248,10 @@ class HyperoptExperiment(Experiment):
             if os.path.isdir(expdir + "/" + d):
                 try:
                     with open(expdir + "/" + d + "/result.json", "r") as f:
-                        result = json.loads('{"val_loss_best' + f.read().split('{"val_loss_best')[-1])
+                        result = json.loads(
+                            '{"val_loss_best'
+                            + f.read().split('{"val_loss_best')[-1]
+                        )
                 except:
                     print(f"error at {expdir + '/' + d}")
                     continue
@@ -246,7 +269,8 @@ class HyperoptExperiment(Experiment):
                     report = pd.DataFrame(result, index=[0])
                 else:
                     report = pd.concat(
-                        [report, pd.DataFrame(result, index=[0])], ignore_index=True
+                        [report, pd.DataFrame(result, index=[0])],
+                        ignore_index=True,
                     )
 
         os.makedirs(os.path.dirname(report_file), exist_ok=True)
