@@ -4,11 +4,8 @@ import numpy as np
 import pyro
 import torch
 from pyro import distributions as dist
-from pyro.distributions.transforms import (
-    AffineCoupling,
-    LowerCholeskyAffine,
-    SoftplusTransform,
-)
+from pyro.distributions.transforms import (AffineCoupling, LowerCholeskyAffine,
+                                           SoftplusTransform)
 from pyro.infer import SVI
 from pyro.nn import DenseNN
 from sklearn.datasets import load_digits
@@ -16,14 +13,9 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from src.veriflow.networks import AdditiveAffineNN, ConvNet2D
-from src.veriflow.transforms import (
-    BaseTransform,
-    LeakyReLUTransform,
-    LUTransform,
-    MaskedCoupling,
-    Permute,
-    ScaleTransform,
-)
+from src.veriflow.transforms import (BaseTransform, LeakyReLUTransform,
+                                     LUTransform, MaskedCoupling, Permute,
+                                     ScaleTransform)
 
 
 class Flow(torch.nn.Module):
