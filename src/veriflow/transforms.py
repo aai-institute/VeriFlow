@@ -7,8 +7,11 @@ import pyro
 import torch
 from pyro import distributions as dist
 from pyro.distributions import constraints
-from pyro.distributions.transforms import (AffineCoupling, LowerCholeskyAffine,
-                                           Permute)
+from pyro.distributions.transforms import (
+    AffineCoupling,
+    LowerCholeskyAffine,
+    Permute,
+)
 from pyro.infer import SVI
 from pyro.nn import DenseNN
 from sklearn.datasets import load_digits
