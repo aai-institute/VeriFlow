@@ -1,11 +1,7 @@
 import torch
 
-from src.veriflow.transforms import (
-    LeakyReLUTransform,
-    LUTransform,
-    Permute,
-    ScaleTransform,
-)
+from src.veriflow.transforms import (LeakyReLUTransform, LUTransform, Permute,
+                                     ScaleTransform)
 
 
 def test_scale_transform():

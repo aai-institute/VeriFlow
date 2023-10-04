@@ -7,12 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as transforms
-from sklearn.datasets import (
-    make_blobs,
-    make_checkerboard,
-    make_circles,
-    make_moons,
-)
+from sklearn.datasets import (make_blobs, make_checkerboard, make_circles,
+                              make_moons)
 from torch import Tensor
 from torchvision.datasets import MNIST, FashionMNIST
 
