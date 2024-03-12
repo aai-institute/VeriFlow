@@ -1,11 +1,11 @@
+import io
 import json
 import logging
 import os
 import shutil
 import typing as T
 from datetime import datetime
-from typing import Any, Dict, Iterable, Literal, Optional
-import warnings
+from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -13,10 +13,8 @@ from pickle import dump
 from PIL import Image
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from matplotlib import pyplot as plt
 import plotly.express as px
-from pyro import distributions as dist
-from pyro.distributions.transforms import AffineCoupling, Permute
+import ray
 from ray import tune
 from ray.air import RunConfig, session
 
@@ -26,19 +24,7 @@ from src.veriflow.flows import NiceFlow
 from src.veriflow.networks import AdditiveAffineNN
 from src.veriflow.transforms import ScaleTransform
 
-HyperParams = Literal[
-    "train",
-    "test",
-    "coupling_layers",
-    "coupling_nn_layers",
-    "split_dim",
-    "epochs",
-    "iters",
-    "batch_size",
-    "optim",
-    "optim_params",
-    "base_dist",
-]
+
 
 class HyperoptExperiment(Experiment):
     """Hyperparameter optimization experiment."""
@@ -81,7 +67,7 @@ class HyperoptExperiment(Experiment):
         
         Args:
             config (T.Dict[str, T.Any]): configuration
-            device (torch.device, optional): device. Defaults to "cpu".
+            device (torch.device, optional): device. Defaults to None.
         Returns:
             Dict[str, float]: trial performance metrics
         """
@@ -108,7 +94,7 @@ class HyperoptExperiment(Experiment):
         
         best_loss = float("inf")
         strikes = 0
-        for _ in range(config["epochs"]):
+        for epoch in range(config["epochs"]):
             train_loss = flow.fit(
                 data_train,
                 config["optim_cfg"]["optimizer"],
@@ -132,31 +118,45 @@ class HyperoptExperiment(Experiment):
                 best_loss = val_loss
                 
                 # Create checkpoint
-                torch.save(flow.state_dict(), "./checkpoint.pt")
+                
+                torch.save(flow.state_dict(), f"./checkpoint.pt")
                 
                 # Advanced logging
-                cfg_log = config["logging"]
-                if "images" in cfg_log and cfg_log["images"]:
-                    img_sample(
-                        flow, 
-                        "./sample.png", 
-                        reshape=cfg_log["image_shape"], 
-                        device=device
-                    )
-                if "scatter" in cfg_log and cfg_log["scatter"]:
-                    scatter_sample(
-                        flow, 
-                        "./scatter.png", 
-                        device=device
-                    )
-                    
-                    density_contour_sample(flow, "./density_contour.png", writer=writer, device=device)
+                try:
+                    cfg_log = config["logging"]
+                    if "images" in cfg_log and cfg_log["images"]:
+                        img_sample(
+                            flow, 
+                            f"sample",
+                            step=epoch, 
+                            reshape=cfg_log["image_shape"], 
+                            device=device,
+                            writer=writer
+                        )
+                    if "scatter" in cfg_log and cfg_log["scatter"]:
+                        scatter_sample(
+                            flow, 
+                            f"scatter",
+                            step=epoch, 
+                            device=device,
+                            writer=writer
+                        )
+                        
+                        density_contour_sample(
+                            flow,
+                            f"density_contour",
+                            step=epoch,
+                            writer=writer,
+                            device=device
+                        )
+                except KeyError:
+                    pass
                 
             else:
                 strikes += 1
                 if strikes >= config["patience"]:
                     break
-
+        writer.close()
         return {
             "val_loss_best": best_loss,
             "val_loss": val_loss,
@@ -170,17 +170,19 @@ class HyperoptExperiment(Experiment):
             storage_path (os.PathLike, optional): Ray logging path. Defaults to None.
         """
         home = os.path.expanduser("~")
-
+        
+        ray.init(_temp_dir=f"{storage_path}/temp/")
+        #ray.init()
+        
         if storage_path is not None:
-            tuner_config = {"run_config": RunConfig(storage_path=storage_path)}
+            runcfg = RunConfig(storage_path=storage_path)
+            runcfg.local_dir = f"{storage_path}/local/"
+            tuner_config = {"run_config": runcfg}
         else:
             storage_path = os.path.expanduser("~/ray_results")
             tuner_config = {}
 
         exptime = str(datetime.now())
-
-        #search_alg = BayesOptSearch(utility_kwargs={"kind": "ucb", "kappa": 2.5, "xi": 0.0})
-        #search_alg = ConcurrencyLimiter(search_alg, max_concurrent=100)
         tuner = tune.Tuner(
             tune.with_resources(
                 tune.with_parameters(HyperoptExperiment._trial),
@@ -213,6 +215,7 @@ class HyperoptExperiment(Experiment):
         best_result = results.iloc[results["val_loss_best"].argmin()].copy()
 
         self._test_best_model(best_result, exppath, report_dir, exp_id=exptime)
+        ray.shutdown()
     
     def _test_best_model(self, best_result: pd.Series, expdir: str, report_dir: str, device: torch.device = "cpu", exp_id: str = "foo" ) -> pd.Series:
         trial_id = best_result.trial_id
@@ -227,13 +230,6 @@ class HyperoptExperiment(Experiment):
                     os.path.join(expdir, d, "params.pkl"), 
                     os.path.join(report_dir, f"{self.name}_{id}_best_config.pkl")
                 )
-                
-                if self.trial_config["logging"]["images"]:
-                    shutil.copyfile(
-                        os.path.join(expdir, d, "sample.png"), 
-                        os.path.join(report_dir, f"{self.name}_{id}_sample.png")
-                    )
-                break
         
         best_model = from_checkpoint(
             os.path.join(report_dir, f"{self.name}_{id}_best_config.pkl"),
@@ -255,7 +251,8 @@ class HyperoptExperiment(Experiment):
         )
         
         return best_result
-        
+    
+    @classmethod  
     def _build_report(self, expdir: str, report_file: str, config_prefix: str = "") -> pd.DataFrame:
         """Builds a report of the hyperopt experiment.
 
@@ -265,7 +262,6 @@ class HyperoptExperiment(Experiment):
             config_prefix: The config_prefix parameter is the prefix for the config items.
         """
         report = None
-        print(os.listdir(expdir))
         for d in os.listdir(expdir):
             if os.path.isdir(expdir + "/" + d):
                 try:
@@ -296,7 +292,15 @@ class HyperoptExperiment(Experiment):
         return report
 
 
-def img_sample(model, path = "./sample.png", reshape: Optional[Iterable[int]] = None, n=2, device="cpu"):
+def img_sample(
+    model, 
+    name = "sample", 
+    step=0, 
+    reshape: Optional[Iterable[int]] = None, 
+    n=2, 
+    writer: SummaryWriter = None, 
+    device="cpu"
+    ):
     """Sample images from a model.
     
     Args:
@@ -307,19 +311,30 @@ def img_sample(model, path = "./sample.png", reshape: Optional[Iterable[int]] = 
         device: device to sample from
 
     """
+    if writer is None:
+        writer = SummaryWriter("./")
     with torch.no_grad():
-        sample = np.uint8(np.clip(model.sample(torch.tensor([n, n])).numpy(), 0, 1) * 255)
+        sample = torch.clip(model.sample(torch.tensor([n, n])), 0, 1) * 255
         
     if reshape is not None:
         reshape = [n, n] + reshape
         sample = sample.reshape(reshape)
     
-    sample = np.concatenate(sample, axis=-1)
-    sample = np.concatenate(sample, axis=0)
-        
-    Image.fromarray(sample, mode="L").save(path, dpi=(300, 300))
+    sample = torch.cat([x for x in sample], dim=-1)
+    sample = torch.cat([x for x in sample], dim=0)
+    
+    writer.add_image(name, sample, global_step=step, dataformats="HW")
+    writer.flush()
+    writer.close()
 
-def scatter_sample(model, path = "./sample.png", n=1000, device="cpu"):
+def scatter_sample(
+    model, 
+    name = "sample", 
+    step=0, 
+    n=1000, 
+    writer: SummaryWriter = None,
+    device="cpu"
+    ):
     """Sample images from a model.
     
     Args:
@@ -329,13 +344,36 @@ def scatter_sample(model, path = "./sample.png", n=1000, device="cpu"):
         device: device to sample from
 
     """
+    if writer is None:
+        writer = SummaryWriter("./")
     with torch.no_grad():
-        sample = model.sample(torch.tensor([n])).numpy()
+        sample = model.sample(torch.tensor([n]))
         
     fig = px.scatter(x=sample[:, 0], y=sample[:, 1])
-    fig.write_image(path, width=800, height=800)
+    fig_bytes = fig.to_image(format="png")
 
-def density_contour_sample(model, path="./density_contour.png", n=1000, device="cpu"):
+    # Load image into PIL
+    image = Image.open(io.BytesIO(fig_bytes))
+
+    # Convert PIL Image to NumPy array
+    image_np = np.array(image)
+
+    # Convert NumPy array to PyTorch Tensor
+    tensor = torch.from_numpy(image_np)
+    
+    writer.add_image(name, tensor, global_step=step, dataformats="HWC")
+    writer.flush()
+    writer.close()
+
+def density_contour_sample(
+    model, 
+    name = "sample", 
+    step=0, 
+    n=1000, 
+    device="cpu",
+    writer: SummaryWriter = None
+    
+    ):
     """Generate a density contour plot from samples of a model and save it as an image.
 
     Args:
@@ -345,12 +383,22 @@ def density_contour_sample(model, path="./density_contour.png", n=1000, device="
         device: device to generate samples from.
 
     """
+    if writer is None:
+        writer = SummaryWriter("./")
     with torch.no_grad():
         # Sample from the model
         sample = model.sample(torch.tensor([n])).to(device).numpy()
 
     # Create a density contour plot
     fig = px.density_contour(x=sample[:, 0], y=sample[:, 1])
-
-    # Save the plot as an image
-    fig.write_image(path, width=800, height=800)
+    fig_bytes = fig.to_image(format="png")
+    # Load image into PIL
+    image = Image.open(io.BytesIO(fig_bytes))
+    # Convert PIL Image to NumPy array
+    image_np = np.array(image)
+    # Convert NumPy array to PyTorch Tensor
+    tensor = torch.from_numpy(image_np)
+    
+    writer.add_image(name, tensor, global_step=step, dataformats="HWC")
+    writer.flush()
+    writer.close()

@@ -1,0 +1,107 @@
+---
+__object__: src.explib.base.ExperimentCollection
+name: mnist_digit_scaled_small_models_l1rad
+experiments:
+  - &exp_nice_lu_laplace
+    __object__: src.explib.hyperopt.HyperoptExperiment
+    name: mnist_0_chi2_1
+    scheduler:  
+      __object__: ray.tune.schedulers.ASHAScheduler
+      max_t: 1000000
+      grace_period: 1000000
+      reduction_factor: 2
+    num_hyperopt_samples: 8
+    gpus_per_trial: 0
+    cpus_per_trial: 1
+    tuner_params: 
+      metric: val_loss
+      mode: min
+    trial_config:
+      logging:
+        images: true
+        "image_shape": [10, 10]
+      dataset: 
+        __object__: src.explib.datasets.MnistSplit
+        digit: 0
+        scale: true
+      epochs:  200000
+      patience: 20
+      batch_size:
+        __eval__: tune.choice([32])
+      optim_cfg: 
+        optimizer:
+          __class__: torch.optim.Adam 
+        params:
+          lr: 
+            __eval__: tune.loguniform(1e-5, 1e-3)
+          weight_decay: 0.0
+      model_cfg: 
+        type:
+          __class__:  src.veriflow.flows.NiceFlow
+        params:
+          masktype: alternate
+          soft_training: false
+          training_noise_prior:
+            __object__: pyro.distributions.Laplace
+            loc: 0.0
+            scale: 0.001
+          prior_scale: 1.0
+          coupling_layers: 
+            __eval__: tune.choice([3])
+          coupling_nn_layers:
+            __eval__: "tune.choice([[50],[100], [50, 50], [100, 50], [50, 100], [100, 100]])" 
+          nonlinearity: 
+            __eval__: tune.choice([torch.nn.ReLU()])
+          split_dim: 
+            __eval__: tune.choice([10 + i for i in range(41)])
+          base_distribution: 
+            __object__: src.veriflow.distributions.RadialDistribution       
+            p: 1.0
+            loc: 
+              __eval__: torch.zeros(100).to("cpu")
+            radial_distribution:
+              __object__: torch.distributions.chi2.Chi2
+              df: torch.Tensor([1.0])
+          use_lu: true
+  - __overwrites__: *exp_nice_lu_laplace
+    name: mnist_0_chi2_2
+    trial_config:
+      model_cfg: 
+        params:
+          base_distribution:
+            __exact__: 
+              __object__: src.veriflow.distributions.RadialDistribution       
+              p: 1.0
+              loc: 
+                __eval__: torch.zeros(100).to("cpu")
+              radial_distribution:
+                __object__: torch.distributions.chi2.Chi2
+                df: torch.Tensor([2.0])
+  - __overwrites__: *exp_nice_lu_laplace
+    name: mnist_0_chi2_3
+    trial_config:
+      model_cfg: 
+        params:
+          base_distribution:
+            __exact__: 
+              __object__: src.veriflow.distributions.RadialDistribution       
+              p: 1.0
+              loc: 
+                __eval__: torch.zeros(100).to("cpu")
+              radial_distribution:
+                __object__: torch.distributions.chi2.Chi2
+                df: torch.Tensor([3.0])
+  - __overwrites__: *exp_nice_lu_laplace
+    name: mnist_0_chi2_4
+    trial_config:
+      model_cfg: 
+        params:
+          base_distribution:
+            __exact__: 
+              __object__: src.veriflow.distributions.RadialDistribution       
+              p: 1.0
+              loc: 
+                __eval__: torch.zeros(100).to("cpu")
+              radial_distribution:
+                __object__: torch.distributions.chi2.Chi2
+                df: torch.Tensor([4.0])

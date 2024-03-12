@@ -12,14 +12,14 @@ experiments:
       reduction_factor: 2
     num_hyperopt_samples: &num_hyperopt_samples 25
     gpus_per_trial: &gpus_per_trial 0
-    cpus_per_trial: &cpus_per_trial 8
+    cpus_per_trial: &cpus_per_trial 1
     tuner_params: &tuner_params
       metric: val_loss
       mode: min
     trial_config:
       logging:
         images: true
-        "image_shape": [10, 10]
+        "image_shape": [28, 28]
       dataset: &dataset
         __object__: src.explib.datasets.MnistSplit
       epochs: &epochs 200000
@@ -40,18 +40,18 @@ experiments:
         params:
           soft_training: true
           training_noise_prior:
-            __object__: pyro.distributions.Laplace
+            __object__: pyro.distributions.Uniform
             loc: 0.0
             scale: 0.001
           prior_scale: 1.0
           coupling_layers: &coupling_layers 
-            __eval__: tune.choice([2 + i for i in range(29)])
+            __eval__: tune.choice([2 + i for i in range(10)])
           coupling_nn_layers: &coupling_nn_layers 
-            __eval__: "tune.choice([[w] * l for w in range(100, 1000, 100) for l in range(1, 10)])" # tune.choice([[c*32, c*16, c*8, c*16, c*32] for c in [1, 2, 3, 4]] + [[c*64, c*32, c*64]  for c in range(1,5)] + [[c*128] * 2 for c in range(1,5)] + [[c*256] for c in range(1,5)])
+            __eval__: "tune.choice([[w] * l for w in range(100, 201, 100) for l in range(1, 4)])" # tune.choice([[c*32, c*16, c*8, c*16, c*32] for c in [1, 2, 3, 4]] + [[c*64, c*32, c*64]  for c in range(1,5)] + [[c*128] * 2 for c in range(1,5)] + [[c*256] for c in range(1,5)])
           nonlinearity: &nonlinearity 
             __eval__: tune.choice([torch.nn.ReLU()])
           split_dim: 
-            __eval__: tune.choice([50])
+            __eval__: tune.choice([i for i in range(50, 393)])
           base_distribution: 
             __object__: pyro.distributions.Laplace
             loc: 

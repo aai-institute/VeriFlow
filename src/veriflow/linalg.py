@@ -56,4 +56,16 @@ def solve_triangular(M: torch.Tensor, y: torch.Tensor, pivot: Optional[int]=None
         x[..., :-1] = solve_triangular(M_next, y_next, pivot=pivot) 
 
     return x
-           
+
+def random_orthonormal_matrix(n: int) -> torch.Tensor:
+    """ Generates a random orthonormal matrix of size n x n.
+    
+    Args:
+        n: The size of the orthogonal matrix.
+    """
+    # Generate random matrix
+    A = torch.randn(n, n)
+    A = A / torch.norm(A, dim=0)
+    # Apply Gram-Schmidt process
+    Q, _ = torch.qr(A)
+    return Q

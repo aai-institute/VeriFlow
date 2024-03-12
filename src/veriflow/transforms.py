@@ -1,14 +1,13 @@
 import math
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pyro
 import torch
 from pyro import distributions as dist
 from pyro.distributions import constraints
-from pyro.distributions.transforms import (AffineCoupling, LowerCholeskyAffine,
-                                           Permute)
+from pyro.distributions.transforms import Permute
 from pyro.infer import SVI
 from pyro.nn import DenseNN
 from sklearn.datasets import load_digits
@@ -209,6 +208,73 @@ class Permute(BaseTransform):
         return Permute(self.permutation, cache_size=cache_size)
 
 
+class BijectiveLinearTransform(BaseTransform):
+    """Simple implementation of a bijective linear transform. Applies a transform $y = \mathbf{W}x + \mathbf{b}$, where $\mathbf{W}$ is a
+    learnable parameter matrix and $\mathbf{b}$ is a learnable bias vector.
+    Note: This is a dummy implementation that does not enforce bijectivity nor is it intended to be trained.
+    It acts as a simplification of the LU transform for verification purposes.
+    """
+    
+    bijective = True
+    volume_preserving = False
+    domain = dist.constraints.real_vector
+    codomain = dist.constraints.real_vector
+    
+    def __init__(self, dim: int, m: torch.Tensor, bias: torch.Tensor, m_inv: torch.Tensor = None, *args, **kwargs):
+        """ Initializes the linear transform.
+        Args:
+            dim (int): dimension of the input and output
+            m: weight matrix
+            bias: bias vector
+            m_inv: inverse weight matrix
+        """
+        super().__init__(*args, **kwargs)
+        self.dim = dim
+        self.bias = bias
+        
+        self.forth = torch.nn.Linear(dim, dim, bias=True)
+        self.forth.weight = torch.nn.Parameter(m)
+        self.forth.bias = torch.nn.Parameter(bias)
+        
+        self.back = torch.nn.Linear(dim, dim, bias=True)
+        self.back.weight = torch.nn.Parameter(m_inv)
+        self.back.bias = torch.nn.Parameter(-torch.matmul(m_inv, bias))
+        
+        self.m_inv = m_inv
+        with torch.no_grad():
+            self.ladj = torch.linalg.slogdet(m)[1]
+        
+    def log_abs_det_jacobian(self, x: torch.Tensor, y: torch.Tensor, context = None) -> float:
+        """ Computes the log absolute determinant of the Jacobian of the transform
+        
+        Args:
+            x (torch.Tensor): input tensor
+            y (torch.Tensor): output tensor
+        
+        Returns:
+            float: log absolute determinant of the Jacobian of the transform
+        """
+        return self.ladj
+    
+    def forward(self, x: torch.Tensor, context = None) -> torch.Tensor:
+        """ Computes the affine transform $y = \mathbf{W}x + \mathbf{b}$.
+        
+        Args:
+            x (torch.Tensor): input tensor
+            context (torch.Tensor): context tensor (ignored)
+        """
+        
+        return self.forth(x)
+    
+    def backward(self, y: torch.Tensor, context = None) -> torch.Tensor:
+        """ Computes the inverse transform $y = \mathbf{W}^{-1}x + \mathbf{b}$.
+        
+        Args:
+            y (torch.Tensor): input tensor
+            context (torch.Tensor): context tensor (ignored)
+        """
+        return self.back(y)
+
 class LUTransform(BaseTransform):
     """Implementation of a linear bijection transform. Applies a transform $y = (\mathbf{L}\mathbf{U})^{-1}x$, where $\mathbf{L}$ is a
     lower triangular matrix with unit diagonal and $\mathbf{U}$ is an upper triangular matrix. Bijectivity is guaranteed by
@@ -262,7 +328,8 @@ class LUTransform(BaseTransform):
             # TODO: Proper handling
             d = self.dim
             sign = -torch.ones(d) + 2 * torch.bernoulli(.5 * torch.ones(d))
-            self.U_raw += sign * torch.normal(torch.zeros(self.dim), self.prior_scale * torch.ones(self.dim)).exp().diag()
+            scale = self.prior_scale * torch.ones(d) if self.prior_scale is not None else torch.ones(d)
+            self.U_raw += sign * torch.normal(torch.zeros(self.dim), scale).exp().diag()
             self.U_raw.copy_(self.U_raw.triu())
 
         if self.bias is not None:
@@ -378,6 +445,12 @@ class LUTransform(BaseTransform):
                 self.U_raw
                 + perturbation * torch.eye(self.dim, device=self.U_raw.device)
             )
+    
+    def to_linear(self) -> BijectiveLinearTransform:
+        """ Converts the transform to a linear transform"""
+        M_inv = torch.matmul(self.L, self.U)
+        M = torch.inverse(M_inv)
+        return BijectiveLinearTransform(self.dim, M, self.bias, M_inv)
             
 
 
@@ -452,7 +525,6 @@ class MaskedCoupling(BaseTransform):
         Returns:
             float: log absolute determinant of the Jacobian of the transform
         """
-        x_masked = x * self.mask
         return 0.0
 
     def sign(self) -> int:
@@ -534,3 +606,146 @@ class LeakyReLUTransform(BaseTransform):
             float: log absolute determinant of the Jacobian of the transform
         """
         return torch.log(y/x).sum()
+
+class Rotation(BaseTransform):
+    """Implements a rotation transform. The transform is defined by two coordinate axes, defining a plane, and a rotation angle."""
+    bijective = True
+    domain = dist.constraints.real
+    codomain = dist.constraints.real
+    sign = 1
+    ladj = 0
+    
+    
+    def __init__(self, dim, plane: Tuple[int, int], angle: float, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if dim < 2:
+            raise ValueError("dim must be at least 2")
+        if plane[0] == plane[1]:
+            raise ValueError("plane must be a tuple of different indices")
+        if dim <= max(plane):
+            raise ValueError("plane indices must be smaller than dim")
+        
+        self.dim = dim
+        self.plane = plane
+        self.angle = angle
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """ Computes the rotation transform
+        
+        Args:
+            x (torch.Tensor): input tensor
+            
+        Returns:
+            torch.Tensor: transformed tensor
+        """
+        y = x.clone()
+        y[..., self.plane[0]] = x[..., self.plane[0]] * math.cos(self.angle) - x[..., self.plane[1]] * math.sin(self.angle)
+        y[..., self.plane[1]] = x[..., self.plane[0]] * math.sin(self.angle) + x[..., self.plane[1]] * math.cos(self.angle)
+        return y
+
+    def backward(self, y: torch.Tensor) -> torch.Tensor:
+        """ Computes the inverse transform
+        
+        Args:
+            y (torch.Tensor): input tensor
+        
+        Returns:
+            torch.Tensor: transformed tensor
+        """
+        y = y.clone()
+        y[..., self.plane[0]] = y[..., self.plane[0]] * math.cos(self.angle) + y[..., self.plane[1]] * math.sin(self.angle)
+        y[..., self.plane[1]] = -y[..., self.plane[0]] * math.sin(self.angle) + y[..., self.plane[1]] * math.cos(self.angle)
+        return y
+    
+    def as_matrix(self) -> torch.Tensor:
+        """ Returns the rotation matrix"""
+        R = torch.eye(self.dim)
+        R[self.plane[0], self.plane[0]] = math.cos(self.angle)
+        R[self.plane[0], self.plane[1]] = -math.sin(self.angle)
+        R[self.plane[1], self.plane[0]] = math.sin(self.angle)
+        R[self.plane[1], self.plane[1]] = math.cos(self.angle)
+        return R
+
+    def _call(self, x: torch.Tensor) -> torch.Tensor:
+        """ Alias for :func:`forward`"""
+        return self.forward(x)
+
+    def _inverse(self, y: torch.Tensor) -> torch.Tensor:
+        """ Alias for :func:`backward`"""
+        return self.backward(y)
+
+    def log_abs_det_jacobian(self, x: torch.Tensor, y: torch.Tensor, context = None) -> float:
+        """ Computes the log absolute determinant of the Jacobian of the transform
+        
+        Args:
+            x (torch.Tensor): input tensor
+            y (torch.Tensor): output tensor
+        
+        Returns:
+            float: log absolute determinant of the Jacobian of the transform
+        """
+        return self.ladj
+        
+        
+
+class CompositeRotation(BaseTransform):
+    """Implements a composite rotation transform. The transform is defined by a sequence of rotations  $R_1, \ldots, R_n$."""
+    bijective = True
+    domain = dist.constraints.real
+    codomain = dist.constraints.real
+    sign = 1
+    ladj = 0
+    
+    def __init__(self, rotations: List[Rotation], *args, **kwargs) -> None:
+        """ Initializes the composite rotation transform.
+        
+        Args:
+            rotations (List[torch.Tensor]): list of rotation matrices
+        """
+        super().__init__(*args, **kwargs)
+        self.rotations = rotations
+        self.input_shape = rotations[0].dim
+    
+    def as_matrix(self) -> torch.Tensor:
+        """ Returns the composite rotation matrix"""
+        R = torch.eye(self.input_shape)
+        for rot in self.rotations:
+            R = torch.matmul(R, rot.as_matrix())
+        return R
+     
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Computes the composite rotation transform by applying the rotations in sequence"""
+        for rot in self.rotations:
+            x = rot(x)
+            
+        return x
+    
+    def backward(self, y: torch.Tensor, context: Any | None = None) -> torch.Tensor:
+        for rot in self.rotations[::-1]:
+            y = rot.backward(y)
+            
+        return y
+
+    def _call(self, x: torch.Tensor) -> torch.Tensor:
+        """ Alias for :func:`forward`"""
+        return self.forward(x)
+
+    def _inverse(self, y: torch.Tensor) -> torch.Tensor:
+        """ Alias for :func:`backward`"""
+        return self.backward(y)
+
+    def log_abs_det_jacobian(self, x: torch.Tensor, y: torch.Tensor, context = None) -> float:
+        """ Computes the log absolute determinant of the Jacobian of the transform
+        
+        Args:
+            x (torch.Tensor): input tensor
+            y (torch.Tensor): output tensor
+        
+        Returns:
+            float: log absolute determinant of the Jacobian of the transform
+        """
+        return self.ladj
+        
+
+
+

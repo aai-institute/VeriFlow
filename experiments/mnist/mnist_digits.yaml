@@ -24,6 +24,7 @@ experiments:
             dataset: &dataset
               __object__: src.explib.datasets.MnistSplit
               digit: 0
+              scale: true
             epochs: &epochs 200000
             patience: &patience 50
             batch_size: &batch_size 
@@ -40,10 +41,17 @@ experiments:
               type:
                 __class__: &model src.veriflow.flows.NiceFlow
               params:
+                soft_training: true
+                training_noise_prior:
+                  __object__: pyro.distributions.Uniform
+                  low: 0.0
+                  high: 0.001
+                prior_scale: 1.0
+                use_lu: true
                 coupling_layers: &coupling_layers 
-                  __eval__: tune.choice([2, 3, 4, 5, 6, 7, 8, 9, 10])
+                  __eval__: tune.choice([2, 3, 4, 5])
                 coupling_nn_layers: &coupling_nn_layers 
-                  __eval__: tune.choice([[w]*l for l in [1, 2, 3, 4] for w in [10, 20, 50, 100, 200]])
+                  __eval__: tune.choice([[w]*l for l in [1, 2] for w in [10, 20, 50, 100, 200]])
                 nonlinearity: &nonlinearity 
                   __eval__: tune.choice([torch.nn.ReLU()])
                 split_dim: 
@@ -54,7 +62,6 @@ experiments:
                     __eval__: torch.zeros(100)
                   scale: 
                     __eval__: torch.ones(100)
-                permutation: &permutation LU
         - &exp_nice_lu_normal
           __overwrites__: *exp_nice_lu_laplace
           name: mnist_nice_lu_normal
@@ -74,14 +81,16 @@ experiments:
           trial_config:
             model_cfg: 
               params:
-                permutation: random
+                use_lu: false
+                masktype: random
         - &exp_nice_rand_normal
           __overwrites__: *exp_nice_lu_laplace
           name: mnist_nice_rand_normal
           trial_config:
             model_cfg: 
               params:
-                permutation: random
+                use_lu: false
+                masktype: random
                 base_distribution: 
                   __exact__: 
                     __object__: pyro.distributions.Normal

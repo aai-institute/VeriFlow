@@ -96,7 +96,7 @@ class SimpleSplit(DataSplit):
     def get_val(self) -> torch.utils.data.Dataset:
         return self.val
 
-def make_transformed_uniform(dim: int, num_samples: int, transform: Tensor = None) -> Tensor:
+def make_transformed_laplace(dim: int, n_samples: int, transform: Tensor = None) -> Tensor:
     """Create uniform dataset
 
     Args:
@@ -107,7 +107,7 @@ def make_transformed_uniform(dim: int, num_samples: int, transform: Tensor = Non
     Returns:
         np.ndarray: dataset
     """
-    sample = torch.distributions.Laplace(torch.zeros(dim), torch.ones(dim)).sample([num_samples])
+    sample = torch.distributions.Laplace(torch.zeros(dim), torch.ones(dim)).sample([n_samples])
     
     if transform is not None:
         inconsistent = len(transform.shape) != 2
@@ -162,7 +162,7 @@ GENERATORS = {
     "blobs": make_blobs,
     "checkerboard": make_checkerboard,
     "circles": make_circles,
-    "transformed_uniform": make_transformed_uniform,
+    "transformed": make_transformed_laplace,
 }
 
 class SyntheticDataset(torch.utils.data.Dataset):
@@ -190,8 +190,12 @@ class SyntheticDataset(torch.utils.data.Dataset):
         self.dataset = generator(**params)[0]
 
     def __getitem__(self, index: int):
-        x = self.dataset[index]
-        x = Tensor(x)
+        if isinstance(self.dataset, np.ndarray):
+            x = self.dataset[index].copy()
+        else:
+            x = self.dataset[index]
+        if not isinstance(x, Tensor):
+            x = Tensor(x)
         return x, torch.zeros_like(x)
 
     def __len__(self):
